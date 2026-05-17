@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "name": "TypeScript 文件",
+      "pattern": "**/*.ts",
+      "language": "typescript",
+      "formatter": "prettier",
+      "linter": "eslint"
+    },
+    {
+      "name": "TypeScript React 文件",
+      "pattern": "**/*.tsx",
+      "language": "typescript",
+      "formatter": "prettier",
+      "linter": "eslint"
+    },
+    {
+      "name": "CSS 文件",
+      "pattern": "**/*.css",
+      "language": "css",
+      "formatter": "prettier"
+    },
+    {
+      "name": "SCSS 文件",
+      "pattern": "**/*.scss",
+      "language": "scss",
+      "formatter": "prettier"
+    },
+    {
+      "name": "HTML 文件",
+      "pattern": "**/*.html",
+      "language": "html",
+      "formatter": "prettier"
+    },
+    {
+      "name": "JSON 文件",
+      "pattern": "**/*.json",
+      "language": "json",
+      "formatter": "prettier"
+    },
+    {
+      "name": "Markdown 文件",
+      "pattern": "**/*.md",
+      "language": "markdown",
+      "formatter": "prettier"
+    },
+    {
+      "name": "配置文件",
+      "pattern": "*.config.{js,ts}",
+      "language": "typescript",
+      "formatter": "prettier",
+      "linter": "eslint"
+    }
+  ],
+  "ignore": [
+    "node_modules/**",
+    "dist/**",
+    ".git/**",
+    "*.min.js",
+    "*.min.css"
+  ]
+} 
