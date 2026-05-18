@@ -18,6 +18,13 @@ function readBoolean(name: string, fallback = false): boolean {
   return /^(1|true|yes|on)$/i.test(value);
 }
 
+function readList(name: string): string[] {
+  return readEnv(name)
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, '');
 }
@@ -26,10 +33,65 @@ function readOrdinary(): 1 | 2 {
   return readEnv('OPENCLI_ORDINARY') === '2' ? 2 : 1;
 }
 
+function normalizeAllowedHost(value: string): string {
+  try {
+    return new URL(value.includes('://') ? value : `http://${value}`).hostname;
+  } catch {
+    return value.replace(/:\d+$/, '');
+  }
+}
+
+function normalizeOrigin(value: string): string {
+  if (value === '*') return value;
+
+  try {
+    return new URL(value).origin;
+  } catch {
+    return value.replace(/\/+$/, '');
+  }
+}
+
+function unique(values: string[]): string[] {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function defaultAllowedHosts(host: string): string[] {
+  const hosts = ['localhost', '127.0.0.1', '[::1]'];
+  if (host && !['0.0.0.0', '::'].includes(host)) {
+    hosts.push(host);
+  }
+
+  return unique(hosts.map(normalizeAllowedHost));
+}
+
+function defaultAllowedOrigins(host: string, port: number): string[] {
+  const origins = [
+    `http://localhost:${port}`,
+    `http://127.0.0.1:${port}`,
+    `http://[::1]:${port}`,
+  ];
+
+  if (host && !['0.0.0.0', '::'].includes(host)) {
+    const hostForUrl = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
+    origins.push(`http://${hostForUrl}:${port}`);
+  }
+
+  return unique(origins.map(normalizeOrigin));
+}
+
+const host = readEnv('OPENCLI_MCP_HOST', '127.0.0.1');
+const port = readInt('OPENCLI_MCP_PORT', 8787);
+const configuredAllowedHosts = readList('OPENCLI_MCP_ALLOWED_HOSTS').map(normalizeAllowedHost);
+const configuredAllowedOrigins = readList('OPENCLI_MCP_ALLOWED_ORIGINS').map(normalizeOrigin);
+
 export interface OpenCliMcpConfig {
+  name: string;
+  version: string;
   host: string;
   port: number;
   mcpKey: string;
+  allowedHosts: string[];
+  allowedOrigins: string[];
   apiBase: string;
   authApiBase: string;
   routerApiBase: string;
@@ -42,9 +104,13 @@ export interface OpenCliMcpConfig {
 }
 
 export const config: OpenCliMcpConfig = {
-  host: readEnv('OPENCLI_MCP_HOST', '127.0.0.1'),
-  port: readInt('OPENCLI_MCP_PORT', 8787),
+  name: readEnv('OPENCLI_MCP_NAME', 'opencli-mcp'),
+  version: readEnv('OPENCLI_MCP_VERSION', '1.0.0'),
+  host,
+  port,
   mcpKey: readEnv('OPENCLI_MCP_KEY', 'local-dev-key'),
+  allowedHosts: configuredAllowedHosts.length > 0 ? configuredAllowedHosts : defaultAllowedHosts(host),
+  allowedOrigins: configuredAllowedOrigins.length > 0 ? configuredAllowedOrigins : defaultAllowedOrigins(host, port),
   apiBase: trimTrailingSlash(readEnv('OPENCLI_API_BASE', 'http://10.16.65.106:7777')),
   authApiBase: trimTrailingSlash(readEnv('OPENCLI_AUTH_API_BASE', 'http://10.16.65.106:7776')),
   routerApiBase: trimTrailingSlash(readEnv('OPENCLI_ROUTER_API_BASE', 'http://10.16.65.106:7780')),

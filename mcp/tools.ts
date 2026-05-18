@@ -1,8 +1,36 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { OpenCliCommand, OpenCliResult } from '../src/opencli/types.ts';
 import type { OpenCliMcpExecutor } from './opencliMcpExecutor.ts';
+
+const READ_ONLY_TOOL: ToolAnnotations = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: true,
+};
+
+const LOCAL_STATE_TOOL: ToolAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+};
+
+const WRITE_TOOL: ToolAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: true,
+};
+
+const DESTRUCTIVE_TOOL: ToolAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: false,
+  openWorldHint: true,
+};
 
 const nodeTypeSchema = z.enum([
   'DRONE',
@@ -86,6 +114,7 @@ export function registerOpenCliTools(server: McpServer, executor: OpenCliMcpExec
   server.registerTool('opencli_scene_list', {
     title: 'List OpenCLI scenes',
     description: '查询私有/公共/全部仿真场景列表。',
+    annotations: READ_ONLY_TOOL,
     inputSchema: {
       scope: z.enum(['private', 'public', 'all']).optional().default('all').describe('查询范围。'),
       name: z.string().optional().describe('按场景名过滤。'),
@@ -95,11 +124,13 @@ export function registerOpenCliTools(server: McpServer, executor: OpenCliMcpExec
   server.registerTool('opencli_current_scene', {
     title: 'Current OpenCLI scene',
     description: '返回 MCP server 当前加载的场景状态。',
+    annotations: READ_ONLY_TOOL,
   }, async () => runTool('opencli_current_scene', {}, () => executor.currentScene()));
 
   server.registerTool('opencli_load_scene', {
     title: 'Load OpenCLI scene',
     description: '加载指定场景到 MCP server 内存状态，不改变后端仿真运行状态。',
+    annotations: LOCAL_STATE_TOOL,
     inputSchema: {
       sessionId: z.number().int().positive().optional().describe('场景 ID。'),
       name: z.string().optional().describe('场景名称。sessionId 优先。'),
@@ -109,6 +140,7 @@ export function registerOpenCliTools(server: McpServer, executor: OpenCliMcpExec
   server.registerTool('opencli_topo_summary', {
     title: 'Summarize OpenCLI topology',
     description: '返回当前或指定场景的拓扑摘要。',
+    annotations: READ_ONLY_TOOL,
     inputSchema: {
       sessionId: z.number().int().positive().optional().describe('可选场景 ID。缺省使用当前加载场景。'),
     },
@@ -117,6 +149,7 @@ export function registerOpenCliTools(server: McpServer, executor: OpenCliMcpExec
   server.registerTool('opencli_topo_export', {
     title: 'Export OpenCLI topology',
     description: '返回当前或指定场景的完整 topo JSON。',
+    annotations: READ_ONLY_TOOL,
     inputSchema: {
       sessionId: z.number().int().positive().optional().describe('可选场景 ID。缺省使用当前加载场景。'),
     },
@@ -125,6 +158,7 @@ export function registerOpenCliTools(server: McpServer, executor: OpenCliMcpExec
   server.registerTool('opencli_run_text', {
     title: 'Run OpenCLI text command',
     description: '运行现有 OpenCLI 文本命令。写操作会直接执行。',
+    annotations: DESTRUCTIVE_TOOL,
     inputSchema: {
       input: z.string().min(1).describe('OpenCLI 文本命令。'),
     },
@@ -133,26 +167,31 @@ export function registerOpenCliTools(server: McpServer, executor: OpenCliMcpExec
   server.registerTool('opencli_refresh_topo', {
     title: 'Refresh OpenCLI topology',
     description: '刷新当前加载场景的拓扑数据。',
+    annotations: LOCAL_STATE_TOOL,
   }, async () => runStructuredCommand('opencli_refresh_topo', {}, executor, { kind: 'refreshTopo' }));
 
   server.registerTool('opencli_node_list', {
     title: 'List OpenCLI nodes',
     description: '列出当前加载场景的节点。',
+    annotations: READ_ONLY_TOOL,
   }, async () => runStructuredCommand('opencli_node_list', {}, executor, { kind: 'listNodes' }));
 
   server.registerTool('opencli_link_list', {
     title: 'List OpenCLI links',
     description: '列出当前加载场景的链路。',
+    annotations: READ_ONLY_TOOL,
   }, async () => runStructuredCommand('opencli_link_list', {}, executor, { kind: 'listLinks' }));
 
   server.registerTool('opencli_simulation_check', {
     title: 'Check OpenCLI simulation',
     description: '检查当前场景启动仿真前的关键状态。',
+    annotations: READ_ONLY_TOOL,
   }, async () => runStructuredCommand('opencli_simulation_check', {}, executor, { kind: 'simulationCheck' }));
 
   server.registerTool('opencli_create_scene', {
     title: 'Create OpenCLI scene',
     description: '新建仿真场景。写操作会直接执行。',
+    annotations: WRITE_TOOL,
     inputSchema: {
       name: z.string().optional().describe('新场景名称。'),
     },
@@ -161,6 +200,7 @@ export function registerOpenCliTools(server: McpServer, executor: OpenCliMcpExec
   server.registerTool('opencli_close_scene', {
     title: 'Close OpenCLI scene',
     description: '关闭指定仿真场景。高风险写操作，会直接执行。',
+    annotations: DESTRUCTIVE_TOOL,
     inputSchema: {
       sessionId: z.number().int().positive().optional().describe('场景 ID。'),
       name: z.string().optional().describe('场景名称。sessionId 优先。'),
@@ -174,6 +214,7 @@ export function registerOpenCliTools(server: McpServer, executor: OpenCliMcpExec
   server.registerTool('opencli_add_node', {
     title: 'Add OpenCLI node',
     description: '添加一个节点。写操作会直接执行。',
+    annotations: WRITE_TOOL,
     inputSchema: {
       nodeType: nodeTypeSchema.describe('节点类型。'),
       name: z.string().optional().describe('节点名称或别名。'),
@@ -202,6 +243,7 @@ export function registerOpenCliTools(server: McpServer, executor: OpenCliMcpExec
   server.registerTool('opencli_add_nodes_grid', {
     title: 'Add OpenCLI node grid',
     description: '按网格批量生成节点，最多一次 30 个。写操作会直接执行。',
+    annotations: WRITE_TOOL,
     inputSchema: {
       nodeType: nodeTypeSchema.describe('节点类型。'),
       count: z.number().int().positive().max(30).describe('节点数量。'),
@@ -230,6 +272,7 @@ export function registerOpenCliTools(server: McpServer, executor: OpenCliMcpExec
   server.registerTool('opencli_add_nodes_batch', {
     title: 'Add OpenCLI nodes batch',
     description: '按名称批量添加节点。写操作会直接执行。',
+    annotations: WRITE_TOOL,
     inputSchema: {
       nodeType: nodeTypeSchema.describe('节点类型。'),
       names: z.array(z.string().min(1)).min(1).describe('节点名称列表。'),
@@ -258,6 +301,7 @@ export function registerOpenCliTools(server: McpServer, executor: OpenCliMcpExec
   server.registerTool('opencli_connect_nodes', {
     title: 'Connect OpenCLI nodes',
     description: '连接两个节点。写操作会直接执行。',
+    annotations: WRITE_TOOL,
     inputSchema: {
       from: z.string().min(1).describe('起点节点名称、别名或 ID。'),
       to: z.string().min(1).describe('终点节点名称、别名或 ID。'),
@@ -273,6 +317,7 @@ export function registerOpenCliTools(server: McpServer, executor: OpenCliMcpExec
   server.registerTool('opencli_add_links_batch', {
     title: 'Add OpenCLI links batch',
     description: '批量添加链路。写操作会直接执行。',
+    annotations: WRITE_TOOL,
     inputSchema: {
       pairs: z.array(linkPairSchema).min(1).describe('链路节点对列表。'),
       linkType: linkTypeSchema.optional().describe('链路类型。缺省根据节点类型自动判断。'),
@@ -286,6 +331,7 @@ export function registerOpenCliTools(server: McpServer, executor: OpenCliMcpExec
   server.registerTool('opencli_delete_node', {
     title: 'Delete OpenCLI node',
     description: '删除一个节点。高风险写操作，会直接执行。',
+    annotations: DESTRUCTIVE_TOOL,
     inputSchema: {
       target: z.string().min(1).describe('节点名称、别名或 ID。'),
     },
@@ -294,6 +340,7 @@ export function registerOpenCliTools(server: McpServer, executor: OpenCliMcpExec
   server.registerTool('opencli_delete_nodes_batch', {
     title: 'Delete OpenCLI nodes batch',
     description: '批量删除节点。高风险写操作，会直接执行。',
+    annotations: DESTRUCTIVE_TOOL,
     inputSchema: {
       targets: z.array(z.string().min(1)).min(1).describe('节点名称、别名或 ID 列表。'),
     },
@@ -305,6 +352,7 @@ export function registerOpenCliTools(server: McpServer, executor: OpenCliMcpExec
   server.registerTool('opencli_delete_links_batch', {
     title: 'Delete OpenCLI links batch',
     description: '批量删除链路。高风险写操作，会直接执行。',
+    annotations: DESTRUCTIVE_TOOL,
     inputSchema: {
       pairs: z.array(linkPairSchema).min(1).describe('链路节点对列表。'),
     },
@@ -316,6 +364,7 @@ export function registerOpenCliTools(server: McpServer, executor: OpenCliMcpExec
   server.registerTool('opencli_move_node', {
     title: 'Move OpenCLI node',
     description: '移动节点到指定坐标。写操作会直接执行。',
+    annotations: WRITE_TOOL,
     inputSchema: {
       target: z.string().min(1).describe('节点名称、别名或 ID。'),
       lat: z.number().describe('纬度。'),
@@ -333,6 +382,7 @@ export function registerOpenCliTools(server: McpServer, executor: OpenCliMcpExec
   server.registerTool('opencli_set_node_status', {
     title: 'Set OpenCLI node status',
     description: '设置节点状态为 UP 或 DOWN。写操作会直接执行。',
+    annotations: DESTRUCTIVE_TOOL,
     inputSchema: {
       target: z.string().min(1).describe('节点名称、别名或 ID。'),
       status: z.enum(['UP', 'DOWN']).describe('目标状态。'),
@@ -346,16 +396,19 @@ export function registerOpenCliTools(server: McpServer, executor: OpenCliMcpExec
   server.registerTool('opencli_clear_scene', {
     title: 'Clear OpenCLI scene',
     description: '清空当前场景拓扑。高风险写操作，会直接执行。',
+    annotations: DESTRUCTIVE_TOOL,
   }, async () => runStructuredCommand('opencli_clear_scene', {}, executor, { kind: 'clearScene' }));
 
   server.registerTool('opencli_sample_scene', {
     title: 'Create OpenCLI sample scene',
     description: '在当前场景创建 OpenCLI 示例拓扑元素。写操作会直接执行。',
+    annotations: WRITE_TOOL,
   }, async () => runStructuredCommand('opencli_sample_scene', {}, executor, { kind: 'sampleScene' }));
 
   server.registerTool('opencli_start_simulation', {
     title: 'Start OpenCLI simulation',
     description: '启动当前场景仿真。写操作会直接执行。',
+    annotations: WRITE_TOOL,
     inputSchema: {
       duration: z.number().positive().optional().describe('仿真时长，秒或毫秒。小于等于 86400 时按秒处理。'),
     },
@@ -367,10 +420,12 @@ export function registerOpenCliTools(server: McpServer, executor: OpenCliMcpExec
   server.registerTool('opencli_pause_simulation', {
     title: 'Pause OpenCLI simulation',
     description: '暂停当前场景仿真。高风险写操作，会直接执行。',
+    annotations: DESTRUCTIVE_TOOL,
   }, async () => runStructuredCommand('opencli_pause_simulation', {}, executor, { kind: 'pauseSession' }));
 
   server.registerTool('opencli_stop_simulation', {
     title: 'Stop OpenCLI simulation',
     description: '停止当前场景仿真。高风险写操作，会直接执行。',
+    annotations: DESTRUCTIVE_TOOL,
   }, async () => runStructuredCommand('opencli_stop_simulation', {}, executor, { kind: 'stopSession' }));
 }

@@ -17,6 +17,24 @@ interface SessionRecord {
   transport: StreamableHTTPServerTransport;
 }
 
+const MCP_ALLOWED_HEADERS = [
+  'Accept',
+  'Authorization',
+  'Content-Type',
+  'Mcp-Session-Id',
+  'MCP-Protocol-Version',
+  'mcp-session-id',
+  'mcp-protocol-version',
+  'x-opencli-mcp-key',
+  'X-Agent-User-Authorization',
+  'X-Agent-Project-Id',
+  'X-Agent-Run-Id',
+  'X-Agent-Trace-Id',
+  'X-Agent-Session-Id',
+];
+
+const MCP_EXPOSED_HEADERS = ['Mcp-Session-Id', 'mcp-session-id'];
+
 const backend = new OpenCliBackendClient();
 const executor = new OpenCliMcpExecutor(backend);
 const sessions = new Map<string, SessionRecord>();
@@ -24,8 +42,8 @@ let singleClientSessionId: string | null = null;
 
 function createServer(): McpServer {
   const server = new McpServer({
-    name: 'opencli-mcp',
-    version: '1.0.0',
+    name: config.name,
+    version: config.version,
   });
 
   registerOpenCliTools(server, executor);
@@ -36,6 +54,39 @@ function createServer(): McpServer {
 
 function headerValue(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] || '' : value || '';
+}
+
+function requestId(body: unknown): string | number | null {
+  if (!body || typeof body !== 'object') return null;
+  const { id } = body as { id?: string | number | null };
+  return id ?? null;
+}
+
+function normalizeOrigin(value: string): string {
+  if (value === '*') return value;
+
+  try {
+    return new URL(value).origin;
+  } catch {
+    return value.replace(/\/+$/, '');
+  }
+}
+
+function isAllowedOrigin(origin: string): boolean {
+  const allowedOrigins = config.allowedOrigins;
+  return allowedOrigins.includes('*') || allowedOrigins.includes(normalizeOrigin(origin));
+}
+
+function corsOrigin(
+  origin: string | undefined,
+  callback: (error: Error | null, allow?: boolean | string) => void
+): void {
+  if (!origin) {
+    callback(null, false);
+    return;
+  }
+
+  callback(null, isAllowedOrigin(origin) ? origin : false);
 }
 
 function truncate(value: string, maxLength = 180): string {
@@ -80,6 +131,29 @@ function requestLogger(req: Request, res: Response, next: NextFunction): void {
   next();
 }
 
+function securityHeaders(_req: Request, res: Response, next: NextFunction): void {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+}
+
+function originGuard(req: Request, res: Response, next: NextFunction): void {
+  const origin = headerValue(req.headers.origin as string | string[] | undefined);
+  if (!origin || isAllowedOrigin(origin)) {
+    next();
+    return;
+  }
+
+  res.status(403).json({
+    jsonrpc: '2.0',
+    error: {
+      code: -32000,
+      message: 'Forbidden MCP origin.',
+    },
+    id: requestId(req.body),
+  });
+}
+
 function authMiddleware(req: Request, res: Response, next: NextFunction): void {
   if (!config.mcpKey) {
     next();
@@ -95,13 +169,14 @@ function authMiddleware(req: Request, res: Response, next: NextFunction): void {
     return;
   }
 
+  res.setHeader('WWW-Authenticate', 'Bearer realm="opencli-mcp"');
   res.status(401).json({
     jsonrpc: '2.0',
     error: {
       code: -32001,
       message: 'Unauthorized MCP request.',
     },
-    id: null,
+    id: requestId(req.body),
   });
 }
 
@@ -145,8 +220,16 @@ function setSessionId(req: Request, sessionId: string): void {
 
 function normalizePostAcceptHeader(req: Request): void {
   const accept = headerValue(req.headers.accept);
-  if (accept.includes('text/event-stream') && !accept.includes('application/json')) {
-    setRequestHeader(req, 'Accept', `${accept}, application/json`);
+  const required = ['application/json', 'text/event-stream'];
+
+  if (!accept || accept === '*/*') {
+    setRequestHeader(req, 'Accept', required.join(', '));
+    return;
+  }
+
+  const missing = required.filter((item) => !accept.includes(item));
+  if (missing.length > 0) {
+    setRequestHeader(req, 'Accept', `${accept}, ${missing.join(', ')}`);
   }
 }
 
@@ -160,6 +243,16 @@ function findSingleClientSession(): { sessionId: string; session: SessionRecord 
   }
 
   return { sessionId: singleClientSessionId, session };
+}
+
+function cleanupSession(sessionId: string | undefined): void {
+  if (!sessionId || !sessions.has(sessionId)) return;
+
+  sessions.delete(sessionId);
+  if (singleClientSessionId === sessionId) {
+    singleClientSessionId = null;
+  }
+  console.log(`[OpenCLI MCP] Session closed: ${sessionId}`);
 }
 
 async function handlePost(req: Request, res: Response): Promise<void> {
@@ -218,16 +311,7 @@ async function handlePost(req: Request, res: Response): Promise<void> {
       },
     });
 
-    transport.onclose = () => {
-      const id = transport.sessionId;
-      if (id) {
-        sessions.delete(id);
-        if (singleClientSessionId === id) {
-          singleClientSessionId = null;
-        }
-        console.log(`[OpenCLI MCP] Session closed: ${id}`);
-      }
-    };
+    server.server.onclose = () => cleanupSession(transport.sessionId);
 
     await server.connect(transport);
     await transport.handleRequest(req, res, req.body);
@@ -279,13 +363,22 @@ async function handleDelete(req: Request, res: Response): Promise<void> {
   await session.transport.handleRequest(req, res);
 }
 
-const app = createMcpExpressApp({ host: config.host });
-app.use(cors());
+const app = createMcpExpressApp({ host: config.host, allowedHosts: config.allowedHosts });
+app.use(cors({
+  origin: corsOrigin,
+  methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+  allowedHeaders: MCP_ALLOWED_HEADERS,
+  exposedHeaders: MCP_EXPOSED_HEADERS,
+  maxAge: 86400,
+}));
+app.use(securityHeaders);
+app.use(originGuard);
 app.use(requestLogger);
 app.get('/health', (_req, res) => {
   res.json({
     ok: true,
-    name: 'opencli-mcp',
+    name: config.name,
+    version: config.version,
     sessions: sessions.size,
     singleClient: config.singleClient,
     singleClientSession: Boolean(singleClientSessionId),
@@ -314,6 +407,8 @@ app.listen(config.port, config.host, (error?: Error) => {
   }
 
   console.log(`[OpenCLI MCP] Listening on http://${config.host}:${config.port}/mcp`);
+  console.log(`[OpenCLI MCP] Allowed hosts: ${config.allowedHosts.join(', ')}`);
+  console.log(`[OpenCLI MCP] Allowed origins: ${config.allowedOrigins.join(', ')}`);
   if (config.mcpKey) {
     console.log('[OpenCLI MCP] MCP key auth is enabled.');
   } else {
