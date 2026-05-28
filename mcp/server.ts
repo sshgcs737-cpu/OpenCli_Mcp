@@ -11,6 +11,7 @@ import { OpenCliMcpExecutor } from './opencliMcpExecutor.ts';
 import { registerOpenCliTools } from './tools.ts';
 import { registerOpenCliResources } from './resources.ts';
 import { registerOpenCliPrompts } from './prompts.ts';
+import { mcpError, mcpLog, mcpWarn } from './logger.ts';
 
 interface SessionRecord {
   server: McpServer;
@@ -123,10 +124,10 @@ function requestLogger(req: Request, res: Response, next: NextFunction): void {
   const startedAt = Date.now();
   const sessionId = getSessionId(req) || 'none';
 
-  console.log(`[OpenCLI MCP] -> ${req.method} ${req.path} session=${sessionId} ${jsonRpcSummary(req.body)}`);
+  mcpLog(`[OpenCLI MCP] -> ${req.method} ${req.path} session=${sessionId} ${jsonRpcSummary(req.body)}`);
   res.on('finish', () => {
     const duration = Date.now() - startedAt;
-    console.log(`[OpenCLI MCP] <- ${req.method} ${req.path} status=${res.statusCode} ${duration}ms`);
+    mcpLog(`[OpenCLI MCP] <- ${req.method} ${req.path} status=${res.statusCode} ${duration}ms`);
   });
   next();
 }
@@ -252,7 +253,7 @@ function cleanupSession(sessionId: string | undefined): void {
   if (singleClientSessionId === sessionId) {
     singleClientSessionId = null;
   }
-  console.log(`[OpenCLI MCP] Session closed: ${sessionId}`);
+  mcpLog(`[OpenCLI MCP] Session closed: ${sessionId}`);
 }
 
 async function handlePost(req: Request, res: Response): Promise<void> {
@@ -307,7 +308,7 @@ async function handlePost(req: Request, res: Response): Promise<void> {
         if (config.singleClient) {
           singleClientSessionId = newSessionId;
         }
-        console.log(`[OpenCLI MCP] Session initialized: ${newSessionId}`);
+        mcpLog(`[OpenCLI MCP] Session initialized: ${newSessionId}`);
       },
     });
 
@@ -316,7 +317,7 @@ async function handlePost(req: Request, res: Response): Promise<void> {
     await server.connect(transport);
     await transport.handleRequest(req, res, req.body);
   } catch (error) {
-    console.error('[OpenCLI MCP] POST /mcp failed:', error);
+    mcpError('[OpenCLI MCP] POST /mcp failed:', error);
     errorResponse(res);
   }
 }
@@ -389,32 +390,32 @@ app.post('/mcp', authMiddleware, (req, res) => {
 });
 app.get('/mcp', authMiddleware, (req, res) => {
   void handleGet(req, res).catch((error) => {
-    console.error('[OpenCLI MCP] GET /mcp failed:', error);
+    mcpError('[OpenCLI MCP] GET /mcp failed:', error);
     errorResponse(res);
   });
 });
 app.delete('/mcp', authMiddleware, (req, res) => {
   void handleDelete(req, res).catch((error) => {
-    console.error('[OpenCLI MCP] DELETE /mcp failed:', error);
+    mcpError('[OpenCLI MCP] DELETE /mcp failed:', error);
     errorResponse(res);
   });
 });
 
 app.listen(config.port, config.host, (error?: Error) => {
   if (error) {
-    console.error('[OpenCLI MCP] Failed to start:', error);
+    mcpError('[OpenCLI MCP] Failed to start:', error);
     process.exit(1);
   }
 
-  console.log(`[OpenCLI MCP] Listening on http://${config.host}:${config.port}/mcp`);
-  console.log(`[OpenCLI MCP] Allowed hosts: ${config.allowedHosts.join(', ')}`);
-  console.log(`[OpenCLI MCP] Allowed origins: ${config.allowedOrigins.join(', ')}`);
+  mcpLog(`[OpenCLI MCP] Listening on http://${config.host}:${config.port}/mcp`);
+  mcpLog(`[OpenCLI MCP] Allowed hosts: ${config.allowedHosts.join(', ')}`);
+  mcpLog(`[OpenCLI MCP] Allowed origins: ${config.allowedOrigins.join(', ')}`);
   if (config.mcpKey) {
-    console.log('[OpenCLI MCP] MCP key auth is enabled.');
+    mcpLog('[OpenCLI MCP] MCP key auth is enabled.');
   } else {
-    console.warn('[OpenCLI MCP] MCP key auth is disabled. Set OPENCLI_MCP_KEY to protect the server.');
+    mcpWarn('[OpenCLI MCP] MCP key auth is disabled. Set OPENCLI_MCP_KEY to protect the server.');
   }
   if (config.singleClient) {
-    console.log('[OpenCLI MCP] Single-client compatibility mode is enabled.');
+    mcpLog('[OpenCLI MCP] Single-client compatibility mode is enabled.');
   }
 });

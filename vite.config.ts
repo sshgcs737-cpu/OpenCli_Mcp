@@ -47,35 +47,35 @@ export default defineConfig({
     proxy: {
       // 配置代理
       '/api': {
-        target: 'http://10.16.65.106:7777/', // 实际后端服务器地址
+        target: 'http://10.16.37.102:7777/', // 实际后端服务器地址
         changeOrigin: true,//允许跨域
         rewrite: (path) => path.replace(/^\/api/, '') // 可选：移除/api前缀
       },
       '/router': {
-        target: 'http://10.16.65.106:7780/', // 路由协议和测试服务
+        target: 'http://10.16.37.102:7780/', // 路由协议和测试服务
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/router/, '')
       },
 
       '/dockerTest/':{
-        target: 'http://10.16.65.106:7780/', 
+        target: 'http://10.16.37.102:7780/',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/dockerTest/, '')
       },
       // 新增配置：认证服务
       '/auth-api': {
-        target: 'http://10.16.65.106:7776/', // 认证服务器地址
+        target: 'http://10.16.37.102:7776/', // 认证服务器地址
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/auth-api/, '') // 移除/auth-api前缀
       },
       //流量模型
       '/trafficWork':{
-        target: 'http://10.16.65.106:7780/', //流量模型服务器地址
+        target: 'http://10.16.37.102:7780/', //流量模型服务器地址
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/trafficWork/, '')
       },
       '/connect':{
-        target: 'ws://10.16.65.106:10202',
+        target: 'ws://10.16.37.102:10202',
         changeOrigin: true,
         ws: true,
       },
@@ -88,7 +88,7 @@ export default defineConfig({
 
       //有线测量
       '/wiredTest':{
-        target:'http://10.16.65.106:7780',
+        target:'http://10.16.37.102:7780',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/wiredTest/, '')
       }  

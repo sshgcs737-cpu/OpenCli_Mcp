@@ -43,6 +43,31 @@ export interface StartBrokerParams {
   mode: number;
 }
 
+export interface EditVMNodeParams {
+  sessionId: number | string;
+  userId?: number | string;
+  nodeId: number;
+  templateId: number;
+  cpu: number;
+  currentMemory: string;
+  memory: string;
+}
+
+export interface AddVMNodeParams {
+  templateId: number;
+  node: any;
+}
+
+export interface GenerateTDMAParams {
+  savePath: string;
+  slots: number;
+  slotduration: number;
+  slotList: Array<{
+    index: number;
+    nodes: string;
+  }>;
+}
+
 function apiMessage(value: any, fallback: string): string {
   return value?.msg || value?.message || value?.error || fallback;
 }
@@ -75,10 +100,19 @@ function assertApiOk<T>(response: ApiResponse<T>, fallback: string): ApiResponse
 
 export class OpenCliBackendClient {
   private readonly api: AxiosInstance;
+  private readonly routerApi: AxiosInstance;
 
   constructor() {
     this.api = axios.create({
       baseURL: config.apiBase,
+      headers: {
+        'Content-Type': 'application/json;charset=utf-8',
+      },
+      timeout: 30000,
+    });
+
+    this.routerApi = axios.create({
+      baseURL: config.routerApiBase,
       headers: {
         'Content-Type': 'application/json;charset=utf-8',
       },
@@ -92,6 +126,15 @@ export class OpenCliBackendClient {
   }
 
   private async request<T>(label: string, run: () => Promise<{ data: ApiResponse<T> }>): Promise<ApiResponse<T>> {
+    try {
+      const response = await run();
+      return assertApiOk(response.data, label);
+    } catch (error) {
+      throw normalizeAxiosError(error);
+    }
+  }
+
+  private async routerRequest<T>(label: string, run: () => Promise<{ data: ApiResponse<T> }>): Promise<ApiResponse<T>> {
     try {
       const response = await run();
       return assertApiOk(response.data, label);
@@ -169,6 +212,10 @@ export class OpenCliBackendClient {
     return this.request<TopoData>('添加节点失败', () => this.api.post('/node/add', nodeData, { params: { sessionId, userId } }));
   }
 
+  addVMNode(vmNodeData: AddVMNodeParams, sessionId: number, userId: string): Promise<ApiResponse<TopoData>> {
+    return this.request<TopoData>('添加 VM 节点失败', () => this.api.post('/node/addVMNode', vmNodeData, { params: { sessionId, userId } }));
+  }
+
   editNode(nodeData: any, sessionId: number, userId: string): Promise<ApiResponse<TopoData>> {
     return this.request<TopoData>('编辑节点失败', () => this.api.post('/node/edit', nodeData, { params: { sessionId, userId } }));
   }
@@ -210,5 +257,43 @@ export class OpenCliBackendClient {
 
   getNemIds(sessionId: number): Promise<ApiResponse> {
     return this.request('获取 NEM ID 失败', () => this.api.get('/node/nemId', { params: { sessionId } }));
+  }
+
+  getVMTemplates(): Promise<ApiResponse> {
+    return this.request('get VM templates failed', () => this.api.get('/node/getVMTemplate'));
+  }
+
+  editVMNode(vmEditData: EditVMNodeParams): Promise<ApiResponse<TopoData>> {
+    return this.request<TopoData>('edit VM node failed', () => this.api.post('/node/editVMNode', vmEditData));
+  }
+
+  getAllProtocols(sessionId: number, container: string): Promise<ApiResponse> {
+    return this.routerRequest('get protocol configuration failed', () => this.routerApi.get('/router/slecteRouterConfig', {
+      params: { sessionId, container },
+    }));
+  }
+
+  insertRouterInfo(data: Record<string, any>): Promise<ApiResponse> {
+    return this.routerRequest('save protocol configuration failed', () => this.routerApi.post('/router/insert', data));
+  }
+
+  cancelProtocol(sessionId: number): Promise<ApiResponse> {
+    return this.routerRequest('reset protocol configuration failed', () => this.routerApi.get('/router/resetRouter', {
+      params: { sessionId },
+    }));
+  }
+
+  applyProtocol(sessionId: number): Promise<ApiResponse> {
+    return this.routerRequest('apply protocol configuration failed', () => this.routerApi.get('/router/pushRouter', {
+      params: { sessionId },
+    }));
+  }
+
+  passiveMeasurement(data: any): Promise<ApiResponse> {
+    return this.routerRequest('passive measurement command failed', () => this.routerApi.post('/measure/passive', data));
+  }
+
+  generateTDMA(data: GenerateTDMAParams): Promise<ApiResponse> {
+    return this.request('generate TDMA schedule failed', () => this.api.post('/generateTDMA', data));
   }
 }

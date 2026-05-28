@@ -10,7 +10,8 @@
     "build-only": "vite build",
     "preview": "vite preview",
     "mcp": "tsx mcp/server.ts",
-    "mcp:dev": "tsx watch mcp/server.ts"
+    "mcp:dev": "tsx watch mcp/server.ts",
+    "mcp:smoke": "node scripts/mcp-smoke-test.js"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",

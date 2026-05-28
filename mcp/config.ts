@@ -79,10 +79,24 @@ function defaultAllowedOrigins(host: string, port: number): string[] {
   return unique(origins.map(normalizeOrigin));
 }
 
+function defaultWebSocketUrl(apiBase: string): string {
+  try {
+    const url = new URL(apiBase);
+    const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    const hostForUrl = url.hostname.includes(':') ? `[${url.hostname}]` : url.hostname;
+    return `${protocol}//${hostForUrl}:10202/connect`;
+  } catch {
+    return '';
+  }
+}
+
 const host = readEnv('OPENCLI_MCP_HOST', '127.0.0.1');
 const port = readInt('OPENCLI_MCP_PORT', 8787);
 const configuredAllowedHosts = readList('OPENCLI_MCP_ALLOWED_HOSTS').map(normalizeAllowedHost);
 const configuredAllowedOrigins = readList('OPENCLI_MCP_ALLOWED_ORIGINS').map(normalizeOrigin);
+const apiBase = trimTrailingSlash(readEnv('OPENCLI_API_BASE', 'http://10.16.37.102:7777'));
+const authApiBase = trimTrailingSlash(readEnv('OPENCLI_AUTH_API_BASE', 'http://10.16.37.102:7776'));
+const routerApiBase = trimTrailingSlash(readEnv('OPENCLI_ROUTER_API_BASE', 'http://10.16.37.102:7780'));
 
 export interface OpenCliMcpConfig {
   name: string;
@@ -95,6 +109,8 @@ export interface OpenCliMcpConfig {
   apiBase: string;
   authApiBase: string;
   routerApiBase: string;
+  websocketUrl: string;
+  frontendSyncDelayMs: number;
   backendToken: string;
   userId: string;
   username: string;
@@ -111,9 +127,11 @@ export const config: OpenCliMcpConfig = {
   mcpKey: readEnv('OPENCLI_MCP_KEY', 'local-dev-key'),
   allowedHosts: configuredAllowedHosts.length > 0 ? configuredAllowedHosts : defaultAllowedHosts(host),
   allowedOrigins: configuredAllowedOrigins.length > 0 ? configuredAllowedOrigins : defaultAllowedOrigins(host, port),
-  apiBase: trimTrailingSlash(readEnv('OPENCLI_API_BASE', 'http://10.16.65.106:7777')),
-  authApiBase: trimTrailingSlash(readEnv('OPENCLI_AUTH_API_BASE', 'http://10.16.65.106:7776')),
-  routerApiBase: trimTrailingSlash(readEnv('OPENCLI_ROUTER_API_BASE', 'http://10.16.65.106:7780')),
+  apiBase,
+  authApiBase,
+  routerApiBase,
+  websocketUrl: trimTrailingSlash(readEnv('OPENCLI_WS_URL', defaultWebSocketUrl(apiBase))),
+  frontendSyncDelayMs: readInt('OPENCLI_FRONTEND_SYNC_DELAY_MS', 2500),
   backendToken: readEnv('OPENCLI_BACKEND_TOKEN'),
   userId: readEnv('OPENCLI_USER_ID'),
   username: readEnv('OPENCLI_USERNAME', 'mcp-user'),
